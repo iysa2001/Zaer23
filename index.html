@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GanaOpierde — Casino Demo (Simulado)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#05060a;--muted:#a8b3c7;--accent:#ffd700;--neon1:#ff3d81;--neon2:#7cffcb}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Arial;background:linear-gradient(180deg,#021017,#07121b);color:#e6eef8;padding:20px}
+    .center{max-width:1100px;margin:0 auto}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+    h1{font-size:18px;margin:0}
+    .muted{color:var(--muted)}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,0.04)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+    .game-card{padding:12px;border-radius:10px;background:linear-gradient(90deg,#061426,#071428);text-align:center}
+    button{cursor:pointer}
+    .hidden{display:none}
+    .auth{max-width:520px;margin:24px auto}
+    .form-row{display:flex;gap:8px;margin-bottom:8px}
+    input{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:10px;border-radius:8px;color:var(--muted);width:100%}
+    .wallet{display:flex;gap:12px;align-items:center}
+    .small{font-size:13px;color:var(--muted)}
+    footer{margin-top:20px;color:var(--muted);font-size:13px;text-align:center}
+    .nav{display:flex;gap:8px;align-items:center}
+    .badge{background:linear-gradient(90deg,var(--neon2),var(--neon1));padding:6px 8px;border-radius:8px;color:#071428;font-weight:700}
+    /* modal */
+    .modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.6);display:none;align-items:center;justify-content:center;z-index:60}
+    .modal{background:#071028;padding:18px;border-radius:12px;width:min(680px,94%);}
+  </style>
+</head>
+<body>
+  <div class="center">
+    <header>
+      <div>
+        <h1>GanaOpierde — Casino Demo (Simulado)</h1>
+        <div class="small">Demostración: no uses datos reales. Registro y IBAN se mantienen solo durante la sesión.</div>
+      </div>
+      <div class="nav" id="topNav"></div>
+    </header>
+
+    <!-- AUTH VIEW (landing) -->
+    <main id="authView">
+      <section class="card auth">
+        <h2>Regístrate / Accede</h2>
+        <div class="form-row"><input id="email" placeholder="Correo electrónico" type="email"></div>
+        <div class="form-row"><input id="password" placeholder="Contraseña (solo sesión)" type="password"></div>
+        <div class="form-row"><input id="phone" placeholder="Teléfono (+34...)" type="tel"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="btnRegister">Registrarme (sesión)</button>
+          <button id="btnLogin">Iniciar sesión (sesión)</button>
+        </div>
+        <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.04)">
+        <div class="small">Antes de registrarte puedes ver algunos juegos. La opción de comprar monedas solo está disponible después de iniciar sesión.</div>
+      </section>
+
+      <section style="margin-top:16px">
+        <h3>Destacados</h3>
+        <div class="grid">
+          <div class="game-card card"><h4>Tragaperras Neon</h4><div class="small">Prueba gratuita</div></div>
+          <div class="game-card card"><h4>Fuego y Oro</h4><div class="small">Prueba gratuita</div></div>
+          <div class="game-card card"><h4>Reels Lucky</h4><div class="small">Prueba gratuita</div></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- APP VIEW (post-login) -->
+    <main id="appView" class="hidden">
+      <section class="card" style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div class="small">Monedero</div>
+          <div style="font-weight:800;font-size:20px" id="balanceDisplay">0 Monedas</div>
+          <div class="small" id="bonusInfo">Bonificación diaria disponible</div>
+        </div>
+        <div class="wallet">
+          <button id="btnDailyBonus">Reclamar bono diario</button>
+          <button id="btnOpenWallet">Abrir monedero</button>
+          <button id="btnAddIban">Añadir IBAN (sesión)</button>
+          <button id="btnLogout">Cerrar sesión</button>
+          <div class="badge" id="userBadge">user</div>
+        </div>
+      </section>
+
+      <section style="margin-top:12px">
+        <h3>Juegos (100)</h3>
+        <div id="gamesGrid" class="grid"></div>
+      </section>
+    </main>
+
+    <footer>
+      Demo cliente-side · No guarda datos bancarios persistentemente
+    </footer>
+  </div>
+
+  <!-- MODALS -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal card" id="modalContent"></div>
+  </div>
+
+  <script>
+    // Config
+    const INITIAL_BALANCE = 1000; // monedas iniciales por usuario
+    const DAILY_BONUS = 50; // bono diario
+
+    // Helpers storage: session-only user
+    function getSessionUser(){ try{ return JSON.parse(sessionStorage.getItem('demo_session_user')); }catch(e){return null;} }
+    function setSessionUser(u){ try{ sessionStorage.setItem('demo_session_user', JSON.stringify(u)); }catch(e){} }
+    function clearSessionUser(){ try{ sessionStorage.removeItem('demo_session_user'); }catch(e){} }
+
+    // persistent revenue log (for admin) stored in localStorage (simulated money real purchases)
+    function getRevenue(){ try{ return JSON.parse(localStorage.getItem('demo_revenue')||'[]'); }catch(e){return [];} }
+    function pushRevenue(r){ const arr=getRevenue(); arr.unshift(r); localStorage.setItem('demo_revenue', JSON.stringify(arr)); }
+
+    // UI elems
+    const authView = document.getElementById('authView');
+    const appView = document.getElementById('appView');
+    const emailEl = document.getElementById('email');
+    const passwordEl = document.getElementById('password');
+    const phoneEl = document.getElementById('phone');
+    const btnRegister = document.getElementById('btnRegister');
+    const btnLogin = document.getElementById('btnLogin');
+    const btnLogout = document.getElementById('btnLogout');
+    const balanceDisplay = document.getElementById('balanceDisplay');
+    const bonusInfo = document.getElementById('bonusInfo');
+    const btnDailyBonus = document.getElementById('btnDailyBonus');
+    const btnOpenWallet = document.getElementById('btnOpenWallet');
+    const btnAddIban = document.getElementById('btnAddIban');
+    const userBadge = document.getElementById('userBadge');
+
+    const modalBackdrop = document.getElementById('modalBackdrop');
+    const modalContent = document.getElementById('modalContent');
+    const gamesGrid = document.getElementById('gamesGrid');
+    const topNav = document.getElementById('topNav');
+
+    // init
+    function init(){
+      const user = getSessionUser();
+      if(user){ showApp(user); } else { showAuth(); }
+      generateGames(100);
+    }
+
+    // Show auth
+    function showAuth(){ authView.classList.remove('hidden'); appView.classList.add('hidden'); topNav.innerHTML=''; }
+
+    // Register (session only)
+    btnRegister.addEventListener('click', ()=>{
+      const email = emailEl.value.trim(); const pass = passwordEl.value; const phone = phoneEl.value.trim();
+      if(!email || !pass){ alert('Introduce correo y contraseña (demo, sesión).'); return; }
+      // create session user
+      const user = { email, phone: phone||null, created: new Date().toISOString(), balance: INITIAL_BALANCE, lastBonus: null, history: [] };
+      setSessionUser(user); showApp(user);
+    });
+
+    // Login: only works if a session user exists (demo constraint)
+    btnLogin.addEventListener('click', ()=>{
+      const user = getSessionUser();
+      if(!user){ alert('No hay cuenta en esta sesión. Regístrate primero (solo sesión).'); return; }
+      // simple login: match email
+      const email = emailEl.value.trim(); if(email !== user.email){ alert('Credenciales no coinciden con la sesión. Regístrate primero.'); return; }
+      showApp(user);
+    });
+
+    // Show app view
+    function showApp(user){ authView.classList.add('hidden'); appView.classList.remove('hidden'); renderUser(user); renderTopNav(user); }
+
+    function renderTopNav(user){ topNav.innerHTML = '';
+      const span = document.createElement('div'); span.className='small'; span.textContent = user.email; topNav.appendChild(span);
+      const adminBtn = document.createElement('button'); adminBtn.textContent='Admin'; adminBtn.addEventListener('click', openAdmin); topNav.appendChild(adminBtn);
+    }
+
+    function renderUser(user){ balanceDisplay.textContent = user.balance.toLocaleString('es-ES') + ' Monedas'; userBadge.textContent = user.email.split('@')[0]; updateBonusInfo(user); }
+
+    function updateSessionUser(upd){ const user = getSessionUser(); if(!user) return; const merged = Object.assign({}, user, upd); setSessionUser(merged); renderUser(merged); }
+
+    // Daily bonus
+    btnDailyBonus.addEventListener('click', ()=>{
+      const user = getSessionUser(); if(!user) return;
+      const last = user.lastBonus ? new Date(user.lastBonus) : null; const today = new Date();
+      if(last && last.toDateString() === today.toDateString()){ alert('Ya reclamaste tu bono diario.'); return; }
+      user.balance += DAILY_BONUS; user.lastBonus = today.toISOString(); user.history.unshift({type:'daily_bonus', amount:DAILY_BONUS, at: new Date().toISOString()}); setSessionUser(user); renderUser(user); alert('Bono reclamado: +' + DAILY_BONUS + ' monedas');
+    });
+
+    function updateBonusInfo(user){ const last = user.lastBonus ? new Date(user.lastBonus) : null; const today = new Date(); if(last && last.toDateString() === today.toDateString()){ bonusInfo.textContent = 'Bono diario reclamado'; } else { bonusInfo.textContent = 'Bono diario disponible: ' + DAILY_BONUS + ' monedas'; } }
+
+    // Wallet modal
+    btnOpenWallet.addEventListener('click', ()=>{
+      const user = getSessionUser(); if(!user) return; showModal('<h3>Monedero</h3>' +
+        '<p class="small">Saldo: ' + user.balance + ' monedas</p>' +
+        '<p class="small">Comprar monedas (simulado):</p>' +
+        '<div style="display:flex;gap:8px;margin-top:8px">' +
+        '<input id="buyAmount" placeholder="€ (ej. 2.99)" style="padding:8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.06);width:120px">' +
+        '<button id="confirmBuy">Comprar (simulado)</button>' +
+        '</div>' +
+        '<div style="margin-top:10px" class="small">Historial de transacciones (simulado)</div>' +
+        '<div id="walletHistory" style="max-height:160px;overflow:auto;margin-top:8px"></div>'
+      );
+      document.getElementById('confirmBuy').addEventListener('click', ()=>{ const v = parseFloat(document.getElementById('buyAmount').value); if(!v){ alert('Introduce cantidad €'); return; } performBuySimulated(v); });
+      renderWalletHistory();
+    });
+
+    function renderWalletHistory(){ const user = getSessionUser(); if(!user) return; const el = document.getElementById('walletHistory'); if(!el) return; el.innerHTML = '';
+      user.history.slice(0,30).forEach(h=>{ const d = document.createElement('div'); d.className='small'; d.textContent = (h.type==='buy' ? ('Compra €'+h.euros+' → +' + h.coins + ' monedas') : (h.type==='play' ? (`Juego ${h.game} gasto ${h.bet} => ganó ${h.win}`) : h.type)); d.style.padding='6px 0'; el.appendChild(d); });
+    }
+
+    // Simulated buy: map euros to coins (simple conversion 1€ -> 100 coins)
+    function performBuySimulated(euros){ const coins = Math.round(euros * 100); const user = getSessionUser(); user.balance += coins; user.history.unshift({type:'buy', euros, coins, at:new Date().toISOString()}); setSessionUser(user); // log revenue persistently for admin
+      pushRevenue({ user: user.email, euros, coins, at: new Date().toISOString() }); renderUser(user); renderWalletHistory(); alert('Compra simulada: +' + coins + ' monedas'); }
+
+    // Add IBAN (session only)
+    btnAddIban.addEventListener('click', ()=>{
+      const iban = prompt('Introduce IBAN (solo sesión - no uses datos reales)'); if(!iban) return; try{ sessionStorage.setItem('demo_session_iban_v1', iban); alert('IBAN guardado en sesión. Se eliminará al cerrar sesión/pestaña.'); }catch(e){alert('No se pudo guardar IBAN en sesión.');} renderIbanStatus();
+    });
+
+    function renderIbanStatus(){ const v = sessionStorage.getItem('demo_session_iban_v1'); if(v){ console.log('IBAN en sesión:', maskIban(v)); } }
+    function maskIban(s){ const t = s.replace(/\s+/g,''); if(t.length<8) return '••••••'; return t.slice(0,4)+' •••• '+t.slice(-4); }
+
+    // Logout
+    btnLogout.addEventListener('click', ()=>{ if(confirm('Cerrar sesión? Se borrará IBAN de la sesión.')){ clearSessionUser(); sessionStorage.removeItem('demo_session_iban_v1'); showAuth(); } });
+
+    // Admin: simple daily revenue summary
+    function openAdmin(){ const rev = getRevenue(); // sum today
+      const today = new Date().toISOString().slice(0,10);
+      const todayRev = rev.filter(r => r.at.slice(0,10) === today);
+      const totalEuros = todayRev.reduce((s,r)=>s + (r.euros||0), 0);
+      showModal('<h3>Admin — Ventas hoy</h3><p class="small">Total € hoy: ' + totalEuros.toFixed(2) + '</p><div style="max-height:240px;overflow:auto;">\n      '+ todayRev.map(r=>('<div class="small">'+r.at+' — '+r.user+' — €'+r.euros+' → '+r.coins+'c</div>')).join('') + '</div>');
+    }
+
+    // Games generation
+    function generateGames(n){ gamesGrid.innerHTML=''; for(let i=1;i<=n;i++){ const g=document.createElement('div'); g.className='game-card card'; g.innerHTML = '<h4>Tragaperras #' + i + '</h4><div class="small">Gira los carretes y gana monedas</div><div style="margin-top:8px"><button data-game="slot_'+i+'">Jugar</button></div>';
+        g.querySelector('button').addEventListener('click', ()=>{ openSlotModal('Tragaperras #' + i); }); gamesGrid.appendChild(g);} }
+
+    // Slot modal
+    function openSlotModal(gameName){ const user = getSessionUser(); if(!user){ alert('Inicia sesión para jugar'); return; }
+      showModal('<h3>'+gameName+'</h3><p class="small">Apuesta fija: 10 monedas</p><div style="margin-top:10px"><button id="spinBtn">Girar (10c)</button></div><div id="slotResult" style="margin-top:12px"></div>');
+      document.getElementById('spinBtn').addEventListener('click', ()=>{ spinSlot(gameName); });
+    }
+
+    function spinSlot(gameName){ const user = getSessionUser(); if(!user) return; const bet = 10; if(user.balance < bet){ alert('No tienes suficientes monedas.'); return; }
+      user.balance -= bet; // pay bet
+      // simple outcome: random chance to win 0, bet*2, bet*5, bet*10
+      const r = Math.random(); let win=0; if(r>0.995) win = bet*50; else if(r>0.98) win = bet*10; else if(r>0.9) win = bet*5; else if(r>0.6) win = bet*2; else win = 0;
+      user.balance += win; user.history.unshift({type:'play', game:gameName, bet, win, at:new Date().toISOString()}); setSessionUser(user); renderUser(user); renderWalletHistory(); const slotResult = document.getElementById('slotResult'); slotResult.innerHTML = '<div class="small">Resultado: ganaste ' + win + ' monedas</div>';
+    }
+
+    // Modal helpers
+    function showModal(html){ modalContent.innerHTML = html + '<div style="margin-top:12px;text-align:right"><button id="closeModal">Cerrar</button></div>'; modalBackdrop.style.display='flex'; document.getElementById('closeModal').addEventListener('click', closeModal); }
+    function closeModal(){ modalBackdrop.style.display='none'; modalContent.innerHTML=''; }
+
+    // generate initial UI
+    init();
+  </script>
+</body>
+</html>
